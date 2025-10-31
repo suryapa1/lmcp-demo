@@ -1,0 +1,35 @@
+# Looker MCP Server using GenAI Toolbox
+FROM debian:bookworm-slim
+
+# Install minimal dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download GenAI Toolbox binary
+RUN curl -L -o /usr/local/bin/toolbox \
+    "https://storage.googleapis.com/genai-toolbox/v0.18.0/linux/amd64/toolbox" \
+    && chmod +x /usr/local/bin/toolbox
+
+# Set working directory
+WORKDIR /app
+
+# Copy application files
+COPY start-looker.sh /app/
+RUN chmod +x /app/start-looker.sh
+
+# Expose port
+EXPOSE 8080
+
+# Set environment defaults
+ENV PORT=8080
+
+# Looker configuration environment variables
+ENV LOOKER_BASE_URL=""
+ENV LOOKER_CLIENT_ID=""
+ENV LOOKER_CLIENT_SECRET=""
+
+# Start the server
+CMD ["/app/start-looker.sh"]
