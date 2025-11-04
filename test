@@ -1,0 +1,87 @@
+# server.py
+import os
+import google.auth.transport.requests
+from google.oauth2 import id_token
+from vertexai.preview import reasoning_engines
+from google.adk.agents import Agent
+from google.adk.tools.mcp import MCPToolset
+from fastapi import FastAPI
+
+# ============================
+# CONFIGURATION
+# ============================
+MCP_URL = os.getenv("MCP_SERVER_URL") or "https://looker-mcp-xyz.run.app/mcp"
+PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+
+# ============================
+# AUTH TOKEN (for Cloud Run SA)
+# ============================
+def get_id_token(audience: str) -> str:
+    """
+    Generates an ID token signed by the Cloud Run service account
+    (works locally if gcloud auth is set).
+    """
+    req = google.auth.transport.requests.Request()
+    return id_token.fetch_id_token(req, audience)
+
+# ============================
+# MCP TOOLSET CONFIGURATION
+# ============================
+def build_mcp_toolset():
+    token = get_id_token(MCP_URL)
+    return MCPToolset(
+        server_url=MCP_URL,
+        tools=["query", "get_dashboard"],
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+# ============================
+# AGENT INITIALIZATION
+# ============================
+tools = build_mcp_toolset()
+agent = Agent(
+    name="adk_looker_agent",
+    model="gemini-2.0-flash",
+    instruction="Use Looker MCP tools to run analytics queries.",
+    tools=tools,
+)
+
+adk_app = reasoning_engines.AdkApp(agent=agent, enable_tracing=True)
+fastapi_app = adk_app.fastapi_app()  # Entry point for ASGI / Cloud Run
+app = FastAPI()
+
+# optional health check
+@app.get("/")
+def root():
+    return {"status": "ok", "project": PROJECT, "location": LOCATION}
+
+# mount ADK app routes
+app.mount("/adk", fastapi_app)
+
+# ============================
+# LOCAL TESTING ENTRYPOINT
+# ============================
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080)
+
+
+gcloud run deploy adk-looker-agent \
+  --source . \
+  --service-account=adk-agent-sa@<PROJECT>.iam.gserviceaccount.com \
+  --set-env-vars=MCP_SERVER_URL=https://looker-mcp-xyz.run.app/mcp \
+  --allow-unauthenticated
+
+
+  from google.adk.agents import Agent
+from google.adk.tools.mcp import MCPToolset
+import google.auth.transport.requests, google.oauth2.id_token
+
+MCP_URL = "https://looker-mcp-xyz.run.app/mcp"
+req = google.auth.transport.requests.Request()
+token = google.oauth2.id_token.fetch_id_token(req, MCP_URL)
+
+tools = MCPToolset(server_url=MCP_URL, tools=["query"], headers={"Authorization": f"Bearer {token}"})
+agent = Agent(model="gemini-2.0-flash", tools=tools)
+print(agent.run("Run query 'SELECT count(*) FROM users'"))
