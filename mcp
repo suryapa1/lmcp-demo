@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""ADK Agent preconfigured to call the Cloud Run MCP toolset."""
+import logging
+import os
+from pathlib import Path
+
+from google.adk.agents import LlmAgent
+from google.adk.models import Gemini
+from google.adk.tools import MCPToolset
+from google.adk.tools.mcp_tool import StreamableHTTPConnectionParams
+
+logger = logging.getLogger(__name__)
+
+
+def resolve_mcp_url() -> str:
+    """Determine the MCP endpoint from env or known files."""
+    env_url = os.getenv("MCP_SERVER_URL")
+    if env_url:
+        url = env_url.strip()
+        logger.info("MCP server URL (env): %s", url)
+        return url
+
+    root = Path(__file__).resolve().parents[2]
+    candidates = [
+        root / "mcp_server_cloudrun" / "mcp_server_url.txt",
+        root / "hello_world_mcp_url.txt",
+    ]
+    for path in candidates:
+        try:
+            if path.exists():
+                url = path.read_text(encoding="utf-8").strip()
+                if url:
+                    logger.info("MCP server URL (file %s): %s", path, url)
+                    return url
+        except Exception as exc:  # noqa: BLE001 - log and continue
+            logger.warning("Failed reading MCP URL from %s: %s", path, exc)
+
+    fallback = "http://127.0.0.1:8080/mcp"
+    logger.info("MCP server URL (fallback): %s", fallback)
+    return fallback
+
+
+MCP_SERVER_URL = resolve_mcp_url()
+connection_params = StreamableHTTPConnectionParams(url=MCP_SERVER_URL)
+mcp_toolset = MCPToolset(connection_params=connection_params, tool_name_prefix="mcp_")
+
+
+def build_model() -> Gemini:
+    """Initialise Gemini either via API key or Vertex."""
+    model_id = os.getenv("MCP_AGENT_MODEL_ID", "gemini-2.5-flash")
+    api_key = os.getenv("GEMINI_API_KEY")
+    project = os.getenv("GOOGLE_CLOUD_PROJECT", "llmgenai-448101")
+    location = os.getenv("GOOGLE_CLOUD_REGION", "us-central1")
+
+    if api_key:
+        logger.info("Using Gemini via Google AI API key for model %s", model_id)
+        return Gemini(model_id=model_id, api_key=api_key)
+
+    logger.info("Using Vertex AI (%s / %s) for model %s", project, location, model_id)
+    import vertexai  # type: ignore import-not-found
+
+    vertexai.init(project=project, location=location)
+    return Gemini(model_id=model_id)
+
+
+root_agent = LlmAgent(
+    name="cloud_run_mcp_agent",
+    model=build_model(),
+    description=(
+        "ADK agent connected to the Cloud Run MCP server. Demonstrates how to "
+        "call remote MCP tools from a local ADK environment."
+    ),
+    instruction="""
+    You are wired to a Cloud Run MCP server that exposes the following tools:
+    - mcp_get_service_status: confirm the remote service is healthy
+    - mcp_process_data: run demo data operations (analyze, transform, validate)
+    - mcp_query_service: send natural language questions
+    - mcp_execute_task: trigger named background tasks
+    - mcp_get_metrics: retrieve mock service metrics
+
+    Use MCP tools whenever they help the user validate Cloud Run connectivity.
+    Briefly mention which tool you call and summarise the response. If a request
+    does not require tool usage, answer conversationally using your own context.
+    """,
+    tools=[mcp_toolset],
+)
+
+logger.info("✅ ADK MCP agent ready | MCP URL: %s", MCP_SERVER_URL)
