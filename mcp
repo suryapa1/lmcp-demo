@@ -1,3 +1,24 @@
+
+# Google ADK - Agent Development Kit
+google-adk>=1.8.0
+
+# Google Gen AI SDK
+google-genai>=1.0.0
+
+# MCP Toolkit for ADK
+# Note: If MCPToolkit is not available as a separate package,
+# you may need to use the MCP integration pattern from ADK examples
+
+# Environment configuration
+python-dotenv>=1.0.0
+
+# HTTP client for MCP communication
+httpx>=0.25.2
+
+
+
+
+
 #!/usr/bin/env python3
 """ADK Agent preconfigured to call the Cloud Run MCP toolset."""
 import logging
