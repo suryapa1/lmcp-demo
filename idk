@@ -1,0 +1,35 @@
+def get_identity_token(audience: str):
+    """
+    Universal identity-token fetcher that works both:
+    - Locally with service_account.json
+    - In Cloud Run with metadata server
+    """
+    import os
+    import google.auth
+    from google.auth.transport.requests import Request
+    from google.oauth2 import service_account
+    from google.auth import compute_engine
+
+    sa_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+    # 1️⃣ Local Machine → service account file
+    if sa_path and os.path.exists(sa_path):
+        creds = service_account.IDTokenCredentials.from_service_account_file(
+            sa_path,
+            target_audience=audience
+        )
+        creds.refresh(Request())
+        return creds.token
+
+    # 2️⃣ Cloud Run → metadata server
+    try:
+        metadata_creds, _ = google.auth.default()
+        creds = compute_engine.IDTokenCredentials(
+            request=Request(),
+            target_audience=audience
+        )
+        creds.refresh(Request())
+        return creds.token
+
+    except Exception as e:
+        raise RuntimeError(f"Identity token fetch failed: {e}")
