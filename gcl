@@ -1,0 +1,40 @@
+import google.auth.transport.requests
+import google.oauth2.id_token
+
+def fetch_id_token(audience):
+    request = google.auth.transport.requests.Request()
+    return google.oauth2.id_token.fetch_id_token(request, audience)
+
+
+
+from google.auth import default
+from google.auth.transport.requests import Request
+from google.oauth2 import id_token
+
+def create_custom_mcp_toolset(mcp_url):
+
+    audience = mcp_url.split("/mcp")[0]  # REQUIRED FIX
+    logger.info(f"Cloud Run audience: {audience}")
+
+    try:
+        # Auto–uses service account inside Vertex Agent Engine
+        request = Request()
+        token = id_token.fetch_id_token(request, audience)
+        headers = {"Authorization": f"Bearer {token}"}
+        logger.info("Successfully generated Cloud Run ID token")
+
+    except Exception as e:
+        logger.error(f"ID token generation failed: {e}")
+        headers = {}
+
+    return MCPToolset(
+        connection_params=StreamableHTTPConnectionParams(
+            url=mcp_url,
+            headers=headers,
+            verify_ssl=False,
+            timeout=25.0,
+            max_retries=3,
+        ),
+        auth_scheme=None,
+        auth_credential=None,
+    )
