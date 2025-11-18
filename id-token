@@ -1,0 +1,55 @@
+from google.auth.transport.requests import Request
+from google.oauth2 import service_account
+from google.auth import compute_engine
+import google.auth
+import os
+
+def get_identity_token(audience: str):
+    """
+    Universal identity-token fetcher that works:
+    - Locally (uses service_account.json)
+    - In Cloud Run / GCE (uses metadata server)
+    """
+    creds = None
+
+    # 1️⃣ If GOOGLE_APPLICATION_CREDENTIALS exists → Local execution
+    sa_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if sa_path and os.path.exists(sa_path):
+        creds = service_account.IDTokenCredentials.from_service_account_file(
+            sa_path,
+            target_audience=audience
+        )
+        creds.refresh(Request())
+        return creds.token
+
+    # 2️⃣ If running inside Cloud Run → Metadata server automatically handles it
+    try:
+        creds, _ = google.auth.default()  # Loads GCP metadata creds
+        creds = compute_engine.IDTokenCredentials(
+            request=Request(),
+            target_audience=audience
+        )
+        creds.refresh(Request())
+        return creds.token
+    except Exception as e:
+        raise RuntimeError(f"Identity token fetch failed: {e}")
+
+def create_custom_mcp_toolset(mcp_url: str):
+    audience = mcp_url  # Cloud Run accepted audience = full URL
+    token = get_identity_token(audience)
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    return MCPToolset(
+        connection_params=StreamableHTTPConnectionParams(
+            url=mcp_url,
+            headers=headers,
+            timeout=30,
+            verify_ssl=True,
+        ),
+        auth_scheme=None,
+        auth_credential=None,
+    )
